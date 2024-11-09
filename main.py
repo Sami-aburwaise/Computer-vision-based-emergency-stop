@@ -17,7 +17,6 @@ clicks = 0
 
 # UI
 drawn = False
-color = (0, 255, 0)
 alarm_thresh = 150
 stop_thresh = 100
 
@@ -125,23 +124,26 @@ while True:
                             closest_landmark_pos = (cx, cy)
                             closest_projection = projection
 
+                # Determine color based on distance threshold for this specific hand
+                if closest_distance <= stop_thresh:
+                    arrow_color = (0, 0, 255)  # red
+                elif closest_distance <= alarm_thresh:
+                    arrow_color = (0, 255, 255)  # yellow
+                else:
+                    arrow_color = (0, 255, 0)  # green
+
                 # Draw the line from the closest landmark to the closest projection point on the shape
                 if closest_landmark_pos and closest_projection:
-                    cv.arrowedLine(frame, closest_landmark_pos, (int(closest_projection[0]), int(closest_projection[1])), color, 2)
+                    cv.arrowedLine(frame, closest_landmark_pos, (int(closest_projection[0]), int(closest_projection[1])), arrow_color, 2)
                     Distance = closest_distance
 
                     # Print distance
-                    cv.putText(frame, 'Distance: ' + str(int(Distance)), closest_landmark_pos, cv.FONT_HERSHEY_SIMPLEX, 1, color, 3)
+                    cv.putText(frame, 'Distance: ' + str(int(Distance)), closest_landmark_pos, cv.FONT_HERSHEY_SIMPLEX, 1, arrow_color, 3)
 
-                hands_distances.append(Distance)
+                hands_distances.append(closest_distance)
 
-                if Distance <= stop_thresh:
-                    color = (0, 0, 255)  # red
-                elif Distance <= alarm_thresh:
-                    color = (0, 255, 255)  # yellow
-                else:
-                    color = (0, 255, 0)  # green
-
+        # Set state based on minimum distance among all hands, if hands were detected
+        if hands_distances:
             if min(hands_distances) <= stop_thresh:
                 currentState = '2'
             elif min(hands_distances) <= alarm_thresh:
@@ -149,7 +151,8 @@ while True:
             else:
                 currentState = '0'
         else:
-            currentState = '0'
+            currentState = '0'  # No hands detected, set state to '0'
+
 
     # Send on change
     if currentState != pastState:
