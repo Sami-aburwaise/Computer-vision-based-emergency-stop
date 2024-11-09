@@ -43,6 +43,27 @@ def click(event, x, y, flags, param):
 cv.namedWindow("camera")
 cv.setMouseCallback("camera", click)
 
+# Function to calculate the closest point on a line segment (p1, p2) from a point (cx, cy)
+def closest_point_on_segment(p1, p2, cx, cy):
+    x1, y1 = p1
+    x2, y2 = p2
+    dx, dy = x2 - x1, y2 - y1
+    if dx == dy == 0:  # p1 and p2 are the same point
+        return p1, math.sqrt((cx - x1) ** 2 + (cy - y1) ** 2)
+
+    # Calculate the projection of point (cx, cy) onto the line segment
+    t = ((cx - x1) * dx + (cy - y1) * dy) / (dx * dx + dy * dy)
+    if t < 0:  # Closest to p1
+        closest = p1
+    elif t > 1:  # Closest to p2
+        closest = p2
+    else:  # Projection falls on the segment
+        closest = (x1 + t * dx, y1 + t * dy)
+
+    # Calculate the distance to the closest point
+    distance = math.sqrt((cx - closest[0]) ** 2 + (cy - closest[1]) ** 2)
+    return closest, distance
+
 while True:
     # Read frame from webcam
     frameAvailable, frame = cam.read()
@@ -83,33 +104,34 @@ while True:
         # Checking whether a hand is detected
         if results.multi_hand_landmarks:
             for handLms in results.multi_hand_landmarks:  # Working with each hand
+                closest_distance = float('inf')
+                closest_landmark_pos = None
+                closest_projection = None
+
                 for id, lm in enumerate(handLms.landmark):
                     h, w, c = frame.shape
                     cx, cy = int(lm.x * w), int(lm.y * h)
                     mpDraw.draw_landmarks(frame, handLms)
-                    if id == 9:
-                        lm9x, lm9y = cx, cy
-                    elif id == 0:
-                        lm0x, lm0y = cx, cy
 
-                pDis = []
-                # Calculate distances from hand landmark (lm9) to all points
-                for i in range(len(xp) - 1):
-                    # Calculate distance between the current hand landmark and the drawn point
-                    dist = math.sqrt((xp[i] - lm9x)**2 + (yp[i] - lm9y)**2)
-                    pDis.append(dist)
-                    cv.circle(frame, (xp[i], yp[i]), 1, (0, 0, 0), 4)
-                    cv.putText(frame, str(i), (xp[i], yp[i]), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 3)
+                    # Calculate the minimum distance from this landmark to the shape's edges
+                    for i in range(len(xp) - 1):
+                        segment_start = (xp[i], yp[i])
+                        segment_end = (xp[i + 1], yp[i + 1])
+                        projection, distance = closest_point_on_segment(segment_start, segment_end, cx, cy)
 
-                # Find the closest point
-                closest_point_idx = pDis.index(min(pDis))
+                        # Track the closest landmark and projection point on the shape
+                        if distance < closest_distance:
+                            closest_distance = distance
+                            closest_landmark_pos = (cx, cy)
+                            closest_projection = projection
 
-                # Draw the line from the hand landmark to the closest point
-                cv.arrowedLine(frame, (lm9x, lm9y), (xp[closest_point_idx], yp[closest_point_idx]), color, 2)
-                Distance = min(pDis)
+                # Draw the line from the closest landmark to the closest projection point on the shape
+                if closest_landmark_pos and closest_projection:
+                    cv.arrowedLine(frame, closest_landmark_pos, (int(closest_projection[0]), int(closest_projection[1])), color, 2)
+                    Distance = closest_distance
 
-                # Print distance
-                cv.putText(frame, 'Distance: ' + str(int(Distance)), (lm9x, lm9y), cv.FONT_HERSHEY_SIMPLEX, 1, color, 3)
+                    # Print distance
+                    cv.putText(frame, 'Distance: ' + str(int(Distance)), closest_landmark_pos, cv.FONT_HERSHEY_SIMPLEX, 1, color, 3)
 
                 hands_distances.append(Distance)
 
