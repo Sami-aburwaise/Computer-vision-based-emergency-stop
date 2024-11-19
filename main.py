@@ -1,11 +1,14 @@
+import tkinter as tk
+from tkinter import simpledialog
 import math
 import time
 import cv2 as cv
 import mediapipe as mp
+import os
 
 # Mediapipe initialization
 mpHands = mp.solutions.hands
-hands = mpHands.Hands(max_num_hands=3, min_detection_confidence=0.5)
+hands = mpHands.Hands(max_num_hands=2, min_detection_confidence=0.15)
 mpDraw = mp.solutions.drawing_utils
 
 # Mouse coordinates for drawing rectangle
@@ -16,9 +19,6 @@ clicks, drawn = 0, False
 # Thresholds
 alarm_thresh, stop_thresh = 150, 100
 currentState, pastState = '0', '0'
-
-# Webcam initialization
-cam = cv.VideoCapture(0)  # Use webcam as video source
 
 # Boolean flag to control drawing of landmarks and connections
 draw_landmarks = True  # Set to False to disable drawing landmarks and connections
@@ -44,18 +44,67 @@ def closest_point_on_segment(p1, p2, cx, cy):
     closest = (x1 + t * dx, y1 + t * dy)
     return closest, math.dist(closest, (cx, cy))
 
+# Function to get ESP32-CAM IP address dynamically
+def get_esp32_ip():
+    try:
+        # Get the default gateway
+        if os.name == 'nt':  # Windows
+            command = "ipconfig"
+        else:  # Linux/Mac
+            command = "ip route | grep default"
+        result = os.popen(command).read()
+
+        if os.name == 'nt':
+            for line in result.splitlines():
+                if "Default Gateway" in line:
+                    gateway_ip = line.split(":")[-1].strip()
+                    if gateway_ip:
+                        return gateway_ip
+        else:
+            for line in result.splitlines():
+                if "default via" in line:
+                    gateway_ip = line.split(" ")[2].strip()
+                    return gateway_ip
+    except Exception as e:
+        print(f"Error retrieving gateway IP: {e}")
+        return None
+    return None
+
+# Tkinter GUI for camera selection
+def select_camera():
+    root = tk.Tk()
+    root.withdraw()  # Hide the main Tkinter window
+
+    choice = simpledialog.askinteger("Camera Selection", "Select Camera Source:\n1. Webcam\n2. ESP32-CAM")
+    if choice == 1:
+        return cv.VideoCapture(0)  # Webcam
+    elif choice == 2:
+        esp32_ip = get_esp32_ip()
+        if not esp32_ip:
+            print("Could not determine ESP32 IP. Ensure you are connected to its Wi-Fi network.")
+            exit()
+        esp32_url = f"http://{esp32_ip}:80/stream"
+        print(f"Using ESP32-CAM stream at {esp32_url}")
+        return cv.VideoCapture(esp32_url)
+    else:
+        print("Invalid choice. Exiting.")
+        exit()
+
+# Initialize camera using GUI selection
+cam = select_camera()
+
 # Initialize FPS timing before the loop
 t1 = time.time()
 
 while True:
     frameAvailable, frame = cam.read()
     if not frameAvailable:
-        print("Error: Could not read frame from webcam.")
+        print("Error: Could not read frame from the selected camera.")
         break
 
     # Calculate FPS
     t2 = time.time()
-    fps = int(1 / (t2 - t1))
+    fps = int(1 / (t2 - t1)) if (t2 - t1) > 0 else 0
     t1 = t2  # Update t1 to the current time for the next iteration
 
     # Display FPS on frame
@@ -109,26 +158,22 @@ while True:
 
             # Drawing landmarks and connections
             if draw_landmarks:
-                # Draw landmarks as small circles without the numbers
                 for id, lm in enumerate(handLms.landmark):
                     cx, cy = int(lm.x * w), int(lm.y * h)
-                    cv.circle(frame, (cx, cy), 5, (255, 0, 0), -1)  # Draw a circle at each landmark
+                    cv.circle(frame, (cx, cy), 5, (255, 0, 0), -1)
 
-                # Draw connections between landmarks (lines between adjacent landmarks)
-                connections = mpHands.HAND_CONNECTIONS  # This contains all the connections between landmarks
+                connections = mpHands.HAND_CONNECTIONS
                 for start, end in connections:
                     start_x, start_y = int(handLms.landmark[start].x * w), int(handLms.landmark[start].y * h)
                     end_x, end_y = int(handLms.landmark[end].x * w), int(handLms.landmark[end].y * h)
                     cv.line(frame, (start_x, start_y), (end_x, end_y), (0, 255, 0), 2)
 
-    # Update current state based on minimum distance across all hands
     if hands_distances:
         min_distance = min(hands_distances)
         currentState = '2' if min_distance <= stop_thresh else '1' if min_distance <= alarm_thresh else '0'
     else:
         currentState = '0'
 
-    # Send state update if changed
     if currentState != pastState:
         print(f'send: {currentState}')
         pastState = currentState
