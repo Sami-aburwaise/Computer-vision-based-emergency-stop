@@ -9,7 +9,7 @@ from websocket import create_connection
 
 # Mediapipe initialization
 mpHands = mp.solutions.hands
-hands = mpHands.Hands(max_num_hands=2, min_detection_confidence=0.15)
+hands = mpHands.Hands(max_num_hands=2, min_detection_confidence=0.10)
 mpDraw = mp.solutions.drawing_utils
 
 # Mouse coordinates for drawing rectangle
@@ -50,37 +50,10 @@ def closest_point_on_segment(p1, p2, cx, cy):
     closest = (x1 + t * dx, y1 + t * dy)
     return closest, math.dist(closest, (cx, cy))
 
-# Function to get ESP32-CAM IP address dynamically
-def get_esp32_ip():
-    return "192.168.4.1"
-    try:
-        # Get the default gateway
-        if os.name == 'nt':  # Windows
-            command = "ipconfig"
-        else:  # Linux/Mac
-            command = "ip route | grep default"
-        result = os.popen(command).read()
-
-        if os.name == 'nt':
-            for line in result.splitlines():
-                if "Default Gateway" in line:
-                    gateway_ip = line.split(":")[-1].strip()
-                    if gateway_ip:
-                        return gateway_ip
-        else:
-            for line in result.splitlines():
-                if "default via" in line:
-                    gateway_ip = line.split(" ")[2].strip()
-                    return gateway_ip
-    except Exception as e:
-        print(f"Error retrieving gateway IP: {e}")
-        return None
-    return None
-
 def connect_to_esp32():
     global ws
     try:
-        ws = create_connection("ws://192.168.4.1:81", timeout=10)
+        ws = create_connection("ws://{esp32_ip}:81", timeout=5)
         print("Connected to ESP32")
     except Exception as e:
         print(f"Failed to connect: {e}")
@@ -94,7 +67,6 @@ def select_camera():
     if choice == 1:
         return cv.VideoCapture(0)  # Webcam
     elif choice == 2:
-        esp32_ip = get_esp32_ip()
         if not esp32_ip:
             print("Could not determine ESP32 IP. Ensure you are connected to its Wi-Fi network.")
             exit()
@@ -105,6 +77,31 @@ def select_camera():
     else:
         print("Invalid choice. Exiting.")
         exit()
+
+
+def ask_draw_landmarks():
+    global draw_landmarks  # Declare that we are using the global variable
+
+    def on_button_click(answer):
+        global draw_landmarks  # Modify the global variable
+        draw_landmarks = answer
+        root.quit()  # Stop the Tkinter event loop
+        root.destroy()  # Close the window
+
+    root = tk.Tk()
+    root.title("Draw Landmarks")  # Window title
+
+    # Label to ask the question
+    tk.Label(root, text="Draw landmarks on the stream?").pack(pady=20)
+
+    # Yes button
+    tk.Button(root, text="Yes", command=lambda: on_button_click(True)).pack(side=tk.LEFT, padx=20)
+    
+    # No button
+    tk.Button(root, text="No", command=lambda: on_button_click(False)).pack(side=tk.LEFT, padx=20)
+
+    root.mainloop()  # Run the Tkinter event loop
+
 
 
 def send_state_to_esp32(state):
@@ -122,6 +119,8 @@ def send_state_to_esp32(state):
 
 # Initialize camera using GUI selection
 cam = select_camera()
+
+ask_draw_landmarks()
 
 # Initialize FPS timing before the loop
 t1 = time.time()
