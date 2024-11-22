@@ -5,6 +5,7 @@ import time
 import cv2 as cv
 import mediapipe as mp
 import os
+from websocket import create_connection
 
 # Mediapipe initialization
 mpHands = mp.solutions.hands
@@ -18,7 +19,12 @@ clicks, drawn = 0, False
 
 # Thresholds
 alarm_thresh, stop_thresh = 150, 100
-currentState, pastState = '0', '0'
+currentState, pastState = "safe", "safe"  # Updated to match ESP32 states
+
+# ESP32 IP 
+esp32_ip = "192.168.4.1"
+ws = None
+
 
 # Boolean flag to control drawing of landmarks and connections
 draw_landmarks = True  # Set to False to disable drawing landmarks and connections
@@ -46,6 +52,7 @@ def closest_point_on_segment(p1, p2, cx, cy):
 
 # Function to get ESP32-CAM IP address dynamically
 def get_esp32_ip():
+    return "192.168.4.1"
     try:
         # Get the default gateway
         if os.name == 'nt':  # Windows
@@ -70,6 +77,14 @@ def get_esp32_ip():
         return None
     return None
 
+def connect_to_esp32():
+    global ws
+    try:
+        ws = create_connection("ws://192.168.4.1:81", timeout=10)
+        print("Connected to ESP32")
+    except Exception as e:
+        print(f"Failed to connect: {e}")
+
 # Tkinter GUI for camera selection
 def select_camera():
     root = tk.Tk()
@@ -85,10 +100,25 @@ def select_camera():
             exit()
         esp32_url = f"http://{esp32_ip}:80/stream"
         print(f"Using ESP32-CAM stream at {esp32_url}")
+        connect_to_esp32()
         return cv.VideoCapture(esp32_url)
     else:
         print("Invalid choice. Exiting.")
         exit()
+
+
+def send_state_to_esp32(state):
+    global ws
+    if ws is None:
+        print("WebSocket not connected, attempting to reconnect...")
+        connect_to_esp32()
+    try:
+        ws.send(state)
+        print(f"State '{state}' sent successfully")
+    except Exception as e:
+        print(f"Error sending state: {e}")
+        ws = None  # Reset connection to trigger reconnection
+
 
 # Initialize camera using GUI selection
 cam = select_camera()
@@ -170,12 +200,17 @@ while True:
 
     if hands_distances:
         min_distance = min(hands_distances)
-        currentState = '2' if min_distance <= stop_thresh else '1' if min_distance <= alarm_thresh else '0'
+        if min_distance <= stop_thresh:
+            currentState = "stop"
+        elif min_distance <= alarm_thresh:
+            currentState = "alarm"
+        else:
+            currentState = "safe"
     else:
-        currentState = '0'
+        currentState = "safe"
 
     if currentState != pastState:
-        print(f'send: {currentState}')
+        send_state_to_esp32(currentState)
         pastState = currentState
 
     cv.imshow('camera', frame)
