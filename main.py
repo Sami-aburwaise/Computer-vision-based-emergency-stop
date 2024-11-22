@@ -53,7 +53,7 @@ def closest_point_on_segment(p1, p2, cx, cy):
 def connect_to_esp32():
     global ws
     try:
-        ws = create_connection("ws://{esp32_ip}:81", timeout=5)
+        ws = create_connection(f"ws://{esp32_ip}:81", timeout=5)
         print("Connected to ESP32")
     except Exception as e:
         print(f"Failed to connect: {e}")
